@@ -4,11 +4,14 @@ from google.adk.agents import Agent, LoopAgent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 
 from ..config import settings
+from ..model import gemini
+
+WORKER, CRITIC = gemini("FAST_MODEL"), gemini("SMART_MODEL")
 from ..tools import exit_fix_loop, save_fixed_code, validate_fixed_style
 
 code_fixer = Agent(
     name="code_fixer",
-    model=settings.critic_model,
+    model=CRITIC,
     description="Rewrites the code to fix the problems found in review.",
     instruction="""
 Fix this Python code.
@@ -32,7 +35,7 @@ interface itself is the bug. Output ONLY the complete fixed code in one ```pytho
 
 fix_test_runner = Agent(
     name="fix_test_runner",
-    model=settings.worker_model,
+    model=WORKER,
     description="Re-runs the tests against the fixed code.",
     instruction="""
 Execute tests against this fixed code with your code executor:
@@ -51,7 +54,7 @@ Output ONLY JSON: {{"tests_run": n, "passed": n, "failed": n, "errors": n, "fail
 
 fix_validator = Agent(
     name="fix_validator",
-    model=settings.worker_model,
+    model=WORKER,
     description="Decides whether the fix is good enough to stop iterating.",
     instruction=f"""
 1. Call `validate_fixed_style` (no arguments).
@@ -67,7 +70,7 @@ fix_validator = Agent(
 
 fix_summarizer = Agent(
     name="fix_summarizer",
-    model=settings.worker_model,
+    model=WORKER,
     description="Presents the final fixed code and what changed.",
     instruction="""
 Call `save_fixed_code`. Then write markdown for the developer:

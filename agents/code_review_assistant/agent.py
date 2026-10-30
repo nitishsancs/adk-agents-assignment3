@@ -13,13 +13,13 @@ production server (persistent sessions, health check) and deploy/ for Cloud Run.
 
 from google.adk.agents import Agent
 
-from .config import settings
+from .model import gemini
 from .sub_agents.fix import fix_pipeline
 from .sub_agents.review import review_pipeline
 
 root_agent = Agent(
     name="code_review_assistant",
-    model=settings.worker_model,
+    model=gemini(),
     description="Reviews Python code (structure, PEP 8, executed tests) and can fix it automatically.",
     instruction="""
 You are a Python code review assistant.

@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="", extra="ignore")
 
-    worker_model: str = Field(default="gemini-2.5-flash", alias="FAST_MODEL")
-    critic_model: str = Field(default="gemini-2.5-flash", alias="SMART_MODEL")
+    worker_model: str = Field(default="gemini-flash-latest", alias="FAST_MODEL")
+    critic_model: str = Field(default="gemini-flash-latest", alias="SMART_MODEL")
     max_line_length: int = Field(default=100, alias="REVIEW_MAX_LINE_LENGTH")
     max_function_length: int = Field(default=50, alias="REVIEW_MAX_FUNCTION_LENGTH")
     max_complexity: int = Field(default=10, alias="REVIEW_MAX_COMPLEXITY")

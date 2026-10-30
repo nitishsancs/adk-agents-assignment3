@@ -9,6 +9,7 @@ Only rows with a NULL embedding are touched, so it is safe to re-run.
 """
 
 import os
+import time
 from pathlib import Path
 
 import psycopg
@@ -26,22 +27,30 @@ TARGETS = {
     "storedb": ("products", "product_id", "concat_ws('. ', name, brand, category, description)"),
 }
 client = genai.Client()
+BATCH = 25
 
 
 def embed(texts: list[str]) -> list[list[float]]:
-    result = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=texts,
-        config=types.EmbedContentConfig(output_dimensionality=768, task_type="RETRIEVAL_DOCUMENT"),
-    )
-    return [e.values for e in result.embeddings]
+    # Each text counts as one request against the free tier's 100/minute limit.
+    for attempt in range(6):
+        try:
+            result = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=texts,
+                config=types.EmbedContentConfig(output_dimensionality=768, task_type="RETRIEVAL_DOCUMENT"),
+            )
+            return [e.values for e in result.embeddings]
+        except genai.errors.ClientError as exc:
+            if exc.code != 429 or attempt == 5:
+                raise
+            time.sleep(20)
 
 
 for db, (table, key, text_sql) in TARGETS.items():
     with psycopg.connect(DSN.format(db=db)) as conn:
         rows = conn.execute(f"SELECT {key}, {text_sql} FROM {table} WHERE embedding IS NULL ORDER BY {key}").fetchall()
-        for start in range(0, len(rows), 50):
-            batch = rows[start : start + 50]
+        for start in range(0, len(rows), BATCH):
+            batch = rows[start : start + BATCH]
             vectors = embed([text for _, text in batch])
             with conn.cursor() as cur:
                 cur.executemany(

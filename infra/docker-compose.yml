@@ -1,6 +1,6 @@
 # Local stack for parts (c) and (e):
 #   postgres  pgvector + PostGIS, databases ticketsdb and storedb
-#   toolbox   MCP Toolbox for Databases on :5000, serving infra/toolbox/tools.yaml
+#   toolbox   MCP Toolbox for Databases on host :5050, serving infra/toolbox/tools.yaml
 # Start with: docker compose -f infra/docker-compose.yml --env-file .env up -d --build
 services:
   postgres:
@@ -28,7 +28,7 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-    ports: ["5000:5000"]
+    ports: ["5050:5000"]  # 5000 on macOS is taken by AirPlay Receiver
     volumes:
       - ./toolbox/tools.yaml:/config/tools.yaml:ro
     depends_on:

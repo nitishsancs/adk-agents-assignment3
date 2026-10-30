@@ -21,11 +21,12 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
 from google.adk.tools.tool_context import ToolContext
 
+from .model import gemini
 from .prompt import INSTRUCTION
 
 log = logging.getLogger(__name__)
-MODEL = os.getenv("FAST_MODEL", "gemini-2.5-flash")
-TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5000")
+MODEL = gemini()
+TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5050")
 # Used only by `adk web` / scripts, where there is no sign-in step. The FastAPI server
 # (server.py) always sets the real user's email when it creates the session.
 DEMO_USER_EMAIL = os.getenv("DEMO_USER_EMAIL", "alicia@example.com")

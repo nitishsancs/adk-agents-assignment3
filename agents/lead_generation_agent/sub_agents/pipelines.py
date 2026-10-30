@@ -1,10 +1,10 @@
 """The two research phases: learn patterns from past investors, then predict new leads."""
 
 from google.adk.agents import LlmAgent, SequentialAgent
-from google.adk.tools import google_search
 
 from .. import prompts
 from ..config import FAST_MODEL, SMART_MODEL
+from ..websearch import research_tools
 from ..schemas import CompanyFinderOutput, IntentExtractionResult, LeadFinderOutput
 from .fanout import ConsolidateFindingsAgent, FanOutResearchAgent
 
@@ -30,7 +30,7 @@ pattern_discovery_agent = SequentialAgent(
             name="company_finder",
             model=SMART_MODEL,
             instruction=prompts.COMPANY_FINDER_INSTRUCTION,
-            tools=[google_search],
+            tools=research_tools(),
             output_key="company_finder_output",
         ),
         LlmAgent(
@@ -80,7 +80,7 @@ lead_generation_agent = SequentialAgent(
             name="lead_finder",
             model=SMART_MODEL,
             instruction=prompts.LEAD_FINDER_INSTRUCTION,
-            tools=[google_search],
+            tools=research_tools(),
             output_key="lead_finder_output",
         ),
         LlmAgent(

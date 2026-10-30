@@ -1,4 +1,4 @@
-import os
+from .model import gemini
 
-FAST_MODEL = os.getenv("FAST_MODEL", "gemini-2.5-flash")
-SMART_MODEL = os.getenv("SMART_MODEL", "gemini-2.5-flash")
+FAST_MODEL = gemini("FAST_MODEL")
+SMART_MODEL = gemini("SMART_MODEL")

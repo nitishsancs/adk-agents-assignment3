@@ -10,14 +10,13 @@ The root agent runs that pipeline for "analyze this repo" requests and calls the
 directly for one-off tasks, including edit tasks such as generating unit tests.
 """
 
-import os
-
 from google.adk.agents import Agent, LlmAgent, ParallelAgent, SequentialAgent
 from google.adk.tools.agent_tool import AgentTool
 
+from .model import gemini
 from .tools import clone_repository, run_gemini_cli, show_repository_changes
 
-MODEL = os.getenv("FAST_MODEL", "gemini-2.5-flash")
+MODEL = gemini()
 
 
 def cli_analyst(name: str, brief: str, output_key: str) -> LlmAgent:

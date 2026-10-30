@@ -13,16 +13,17 @@ import os
 from datetime import date
 
 from google.adk.agents import Agent
-from google.adk.tools import google_search
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.langchain_tool import LangchainTool
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
 
+from .model import gemini
 from .prompt import INSTRUCTION
+from .websearch import research_tools
 
 log = logging.getLogger(__name__)
-MODEL = os.getenv("FAST_MODEL", "gemini-2.5-flash")
-TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5000")
+MODEL = gemini()
+TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5050")
 GITHUB_TOKEN = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
 
 
@@ -46,8 +47,8 @@ search_agent = Agent(
     name="google_search_agent",
     model=MODEL,
     description="Searches the web for error messages, CVEs, release notes and known fixes.",
-    instruction="You are a Google Search specialist. Search, then answer concisely with source URLs.",
-    tools=[google_search],
+    instruction="You are a web search specialist. Search (and read pages if needed), then answer concisely with source URLs.",
+    tools=research_tools(),
 )
 
 tickets_mcp = McpToolset(

@@ -9,10 +9,10 @@ from typing import AsyncGenerator, ClassVar
 from google.adk.agents import BaseAgent, LlmAgent, ParallelAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
-from google.adk.tools import google_search
 from google.genai import types
 
 from ..config import FAST_MODEL, SMART_MODEL
+from ..websearch import research_tools
 from ..schemas import ResearchFindings, ValidationResult
 
 
@@ -62,7 +62,7 @@ class FanOutResearchAgent(BaseAgent):
                             name=f"{self.prefix}_researcher_{i}",
                             model=SMART_MODEL,
                             instruction=fill(self.researcher_instruction, company=text),
-                            tools=[google_search],
+                            tools=research_tools(),
                             output_key=notes_key,
                             include_contents="none",
                         ),

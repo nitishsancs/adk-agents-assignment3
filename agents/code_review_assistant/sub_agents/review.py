@@ -4,11 +4,14 @@ from google.adk.agents import Agent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 
 from ..config import settings
+from ..model import gemini
+
+WORKER, CRITIC = gemini("FAST_MODEL"), gemini("SMART_MODEL")
 from ..tools import analyze_code_structure, check_code_style, save_review_report, search_past_feedback
 
 code_analyzer = Agent(
     name="code_analyzer",
-    model=settings.worker_model,
+    model=WORKER,
     description="Parses the submitted code and reports its structure.",
     instruction="""
 Call `analyze_code_structure` with the Python code from the user's message, passed
@@ -21,7 +24,7 @@ functions and classes, any syntax error with its line, and the structural issues
 
 style_checker = Agent(
     name="style_checker",
-    model=settings.worker_model,
+    model=WORKER,
     description="Scores PEP 8 compliance.",
     instruction="""
 Call `check_code_style` (no arguments). Report the score out of 100 and group the
@@ -35,7 +38,7 @@ Mention at most the 8 most important issues.
 
 test_runner = Agent(
     name="test_runner",
-    model=settings.worker_model,
+    model=WORKER,
     description="Writes and executes tests for the submitted code in a sandbox.",
     instruction="""
 You are a testing specialist. The code under review is:
@@ -60,7 +63,7 @@ You are a testing specialist. The code under review is:
 
 feedback_synthesizer = Agent(
     name="feedback_synthesizer",
-    model=settings.critic_model,
+    model=CRITIC,
     description="Turns the analysis, style and test results into constructive feedback.",
     instruction="""
 You are a senior engineer mentoring the author. First call `search_past_feedback` to see

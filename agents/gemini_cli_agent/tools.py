@@ -17,7 +17,7 @@ from pathlib import Path
 from google.adk.tools.tool_context import ToolContext
 
 WORKSPACE = Path(os.getenv("GEMINI_CLI_WORKSPACE", Path(__file__).resolve().parents[2] / "workspace"))
-CLI_MODEL = os.getenv("GEMINI_CLI_MODEL", "gemini-2.5-flash")
+CLI_MODEL = os.getenv("GEMINI_CLI_MODEL", "gemini-flash-latest")
 CLI_TIMEOUT = int(os.getenv("GEMINI_CLI_TIMEOUT", "600"))
 GITHUB_URL = re.compile(r"^https://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+?)(?:\.git)?/?$")
 MAX_OUTPUT_CHARS = 20_000
@@ -111,18 +111,22 @@ def run_gemini_cli(task: str, repo_name: str, allow_edits: bool = False) -> dict
         "--approval-mode", "auto_edit" if allow_edits else "plan",
     ]
     try:
-        result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=CLI_TIMEOUT, env=_cli_env())
+        # stdin must be closed: with -p the CLI also reads stdin and would wait forever.
+        result = subprocess.run(
+            argv, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=CLI_TIMEOUT, env=_cli_env()
+        )
     except FileNotFoundError:
         return {"status": "error", "message": "Gemini CLI not found. Install it with: npm install -g @google/gemini-cli"}
     except subprocess.TimeoutExpired:
         return {"status": "error", "message": f"Gemini CLI timed out after {CLI_TIMEOUT}s"}
 
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        payload = {}
+    payload = _json_or_empty(result.stdout)
+    if result.returncode != 0 and not payload:
+        # On failure the CLI writes its JSON error object to stderr instead of stdout.
+        payload = _json_or_empty(result.stderr[result.stderr.find("{"):]) if "{" in result.stderr else {}
     if result.returncode != 0 or "error" in payload:
-        detail = payload.get("error") or result.stderr.strip()[-2000:] or result.stdout[-2000:]
+        error = payload.get("error")
+        detail = (error.get("message") if isinstance(error, dict) else error) or result.stderr.strip()[:2000]
         return {"status": "error", "message": detail}
 
     answer = payload.get("response", result.stdout)
@@ -137,6 +141,14 @@ def run_gemini_cli(task: str, repo_name: str, allow_edits: bool = False) -> dict
         "tokens_by_model": tokens,
         "cli_tools_used": sorted(tools_used),
     }
+
+
+def _json_or_empty(text: str) -> dict:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def show_repository_changes(repo_name: str) -> dict:

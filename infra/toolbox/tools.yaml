@@ -2,8 +2,8 @@
 #
 # Served by the `toolbox` container in infra/docker-compose.yml. Each toolset is
 # exposed as its own MCP endpoint:
-#   http://127.0.0.1:5000/mcp/tickets_toolset   -> part (c) bug assistant
-#   http://127.0.0.1:5000/mcp/store_toolset     -> part (e) e-commerce agent
+#   http://127.0.0.1:5050/mcp/tickets_toolset   -> part (c) bug assistant
+#   http://127.0.0.1:5050/mcp/store_toolset     -> part (e) e-commerce agent
 #
 # Semantic search parameters use `embeddedBy`: Toolbox turns the agent's text into a
 # 768-d gemini-embedding-001 vector before running SQL, so plain Postgres + pgvector
