@@ -1,0 +1,2 @@
+CREATE DATABASE ticketsdb;
+CREATE DATABASE storedb;

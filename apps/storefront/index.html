@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finn Sports Store</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#15171a; --muted:#69707a; --line:#e3e6ea; --accent:#0b6e4f; --user:#e8f3ee; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; justify-content:space-between; align-items:center; padding:14px 24px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header b { font-size:18px; color:var(--accent); }
+  main { max-width:820px; margin:0 auto; padding:16px; }
+  #login, #chat { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  #customers button { display:block; width:100%; text-align:left; margin:6px 0; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; font:inherit; }
+  #customers button:hover { border-color:var(--accent); }
+  #log { height:60vh; overflow-y:auto; padding-right:6px; }
+  .msg { margin:10px 0; padding:10px 14px; border-radius:10px; max-width:90%; }
+  .user { background:var(--user); margin-left:auto; }
+  .agent { background:#fafbfc; border:1px solid var(--line); }
+  .agent table { border-collapse:collapse; } .agent td, .agent th { border:1px solid var(--line); padding:4px 8px; }
+  .tools { color:var(--muted); font-size:12px; margin:2px 0 0 4px; }
+  form { display:flex; gap:8px; margin-top:12px; }
+  input { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+  button.primary { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  .muted { color:var(--muted); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><b>Finn · Sports Store</b><span id="who" class="muted"></span></header>
+<main>
+  <section id="login" class="hidden">
+    <h2>Sign in</h2>
+    <p class="muted">Demo customers seeded from the store database.</p>
+    <div id="customers"></div>
+  </section>
+  <section id="chat" class="hidden">
+    <div id="log"></div>
+    <form id="form"><input id="input" autocomplete="off" placeholder="e.g. I need trail running shoes for wet, rocky terrain"><button class="primary">Send</button></form>
+  </section>
+</main>
+<script>
+let sessionId = null;
+const $ = (id) => document.getElementById(id);
+
+async function boot() {
+  const me = await fetch('/api/me');
+  if (me.ok) return showChat((await me.json()).email);
+  const list = await (await fetch('/api/customers')).json();
+  $('customers').innerHTML = '';
+  list.forEach(c => {
+    const b = document.createElement('button');
+    b.textContent = `${c.name} — ${c.email}`;
+    b.onclick = async () => {
+      await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:c.email})});
+      showChat(c.email);
+    };
+    $('customers').appendChild(b);
+  });
+  $('login').classList.remove('hidden');
+}
+
+function showChat(email) {
+  $('login').classList.add('hidden');
+  $('chat').classList.remove('hidden');
+  $('who').innerHTML = `${email} · <a href="#" id="logout">sign out</a>`;
+  $('logout').onclick = async (e) => { e.preventDefault(); await fetch('/api/logout', {method:'POST'}); location.reload(); };
+  add('agent', "Hi! I'm Finn. Tell me what sport you're shopping for and I'll find gear that's in stock near you.");
+}
+
+function add(cls, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.innerHTML = cls === 'agent' ? marked.parse(text) : text.replace(/</g, '&lt;');
+  $('log').appendChild(d); $('log').scrollTop = 1e9;
+  return d;
+}
+
+$('form').onsubmit = async (e) => {
+  e.preventDefault();
+  const message = $('input').value.trim(); if (!message) return;
+  $('input').value = ''; add('user', message);
+  const tools = document.createElement('div'); tools.className = 'tools'; tools.textContent = 'thinking…';
+  $('log').appendChild(tools);
+  const res = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, session_id:sessionId})});
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; const used = [];
+  while (true) {
+    const {value, done} = await reader.read(); if (done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const ev = (chunk.match(/^event: (.*)$/m) || [])[1]; const data = JSON.parse((chunk.match(/^data: (.*)$/m) || [])[1] || '{}');
+      if (ev === 'session') sessionId = data.session_id;
+      if (ev === 'tool') { used.push(data.name); tools.textContent = 'tools: ' + used.join(' → '); }
+      if (ev === 'message') add('agent', data.text);
+      if (ev === 'done' && !used.length) tools.remove();
+    }
+  }
+};
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,559 @@
+# MCP Toolbox for Databases configuration shared by part (c) and part (e).
+#
+# Served by the `toolbox` container in infra/docker-compose.yml. Each toolset is
+# exposed as its own MCP endpoint:
+#   http://127.0.0.1:5000/mcp/tickets_toolset   -> part (c) bug assistant
+#   http://127.0.0.1:5000/mcp/store_toolset     -> part (e) e-commerce agent
+#
+# Semantic search parameters use `embeddedBy`: Toolbox turns the agent's text into a
+# 768-d gemini-embedding-001 vector before running SQL, so plain Postgres + pgvector
+# replaces the AlloyDB/Cloud SQL `embedding()` function used in the originals.
+
+kind: embeddingModel
+name: gemini-embedder
+type: gemini
+model: gemini-embedding-001
+apiKey: ${GOOGLE_API_KEY}
+dimension: 768
+---
+kind: source
+name: tickets-db
+type: postgres
+host: ${DB_HOST}
+port: 5432
+database: ticketsdb
+user: ${DB_USER}
+password: ${DB_PASSWORD}
+---
+kind: source
+name: store-db
+type: postgres
+host: ${DB_HOST}
+port: 5432
+database: storedb
+user: ${DB_USER}
+password: ${DB_PASSWORD}
+
+# ------------------------------------------------------------------------------
+# Part (c): software bug tickets
+# ------------------------------------------------------------------------------
+---
+kind: tool
+name: search-tickets
+type: postgres-sql
+source: tickets-db
+description: Semantic search for bug tickets similar to a description of a problem. Returns the 3 closest tickets.
+parameters:
+  - name: query
+    type: string
+    description: A natural-language description of the bug to look for.
+    embeddedBy: gemini-embedder
+statement: |
+  SELECT ticket_id, title, description, assignee, priority, status,
+         round((embedding <=> $1::vector)::numeric, 3) AS distance
+  FROM tickets
+  WHERE embedding IS NOT NULL
+  ORDER BY distance ASC
+  LIMIT 3;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-ticket-by-id
+type: postgres-sql
+source: tickets-db
+description: Retrieve a ticket's details using its numeric ID.
+parameters:
+  - name: ticket_id
+    type: integer
+    description: The ticket ID.
+statement: SELECT ticket_id, title, description, assignee, priority, status, creation_time, updated_time FROM tickets WHERE ticket_id = $1;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-tickets-by-assignee
+type: postgres-sql
+source: tickets-db
+description: List tickets assigned to a person, matched on their email or part of it.
+parameters:
+  - name: assignee
+    type: string
+    description: The assignee's email or name fragment.
+statement: SELECT ticket_id, title, priority, status, updated_time FROM tickets WHERE assignee ILIKE '%' || $1 || '%' ORDER BY ticket_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-tickets-by-status
+type: postgres-sql
+source: tickets-db
+description: List tickets with a given status ('Open', 'In Progress', 'Resolved', 'Closed').
+parameters:
+  - name: status
+    type: string
+    description: The ticket status.
+statement: SELECT ticket_id, title, assignee, priority, updated_time FROM tickets WHERE status ILIKE $1 ORDER BY ticket_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-tickets-by-priority
+type: postgres-sql
+source: tickets-db
+description: List tickets with a given priority ('P0 - Critical', 'P1 - High', 'P2 - Medium', 'P3 - Low'). A prefix such as 'P0' also works.
+parameters:
+  - name: priority
+    type: string
+    description: The priority, or its P0-P3 prefix.
+statement: SELECT ticket_id, title, assignee, status, updated_time FROM tickets WHERE priority ILIKE $1 || '%' ORDER BY ticket_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-tickets-by-date-range
+type: postgres-sql
+source: tickets-db
+description: List tickets created or updated within a date range (inclusive).
+parameters:
+  - name: start_date
+    type: string
+    description: Start date, YYYY-MM-DD.
+  - name: end_date
+    type: string
+    description: End date, YYYY-MM-DD.
+  - name: date_field
+    type: string
+    description: Either 'creation_time' or 'updated_time'.
+statement: |
+  SELECT ticket_id, title, priority, status, creation_time, updated_time
+  FROM tickets
+  WHERE CASE WHEN $3 = 'updated_time' THEN updated_time ELSE creation_time END
+        BETWEEN $1::date AND ($2::date + interval '1 day')
+  ORDER BY ticket_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: create-new-ticket
+type: postgres-sql
+source: tickets-db
+description: Create a new bug ticket. The description is embedded automatically so the ticket is searchable straight away. Returns the new ticket_id.
+parameters:
+  - name: title
+    type: string
+    description: A short title, different from the description.
+  - name: description
+    type: string
+    description: A detailed description of the bug, including steps and impact.
+  - name: assignee
+    type: string
+    description: Assignee email. Use 'unassigned' if unknown.
+  - name: priority
+    type: string
+    description: One of 'P0 - Critical', 'P1 - High', 'P2 - Medium', 'P3 - Low'.
+  - name: description_vector
+    type: string
+    description: Hidden copy of the description, embedded for semantic search.
+    valueFromParam: description
+    embeddedBy: gemini-embedder
+statement: |
+  INSERT INTO tickets (title, description, assignee, priority, status, embedding)
+  VALUES ($1, $2, $3, $4, 'Open', $5::vector)
+  RETURNING ticket_id;
+---
+kind: tool
+name: update-ticket-priority
+type: postgres-sql
+source: tickets-db
+description: Change a ticket's priority. Returns the updated ticket.
+parameters:
+  - name: priority
+    type: string
+    description: One of 'P0 - Critical', 'P1 - High', 'P2 - Medium', 'P3 - Low'.
+  - name: ticket_id
+    type: integer
+    description: The ticket ID.
+statement: UPDATE tickets SET priority = $1 WHERE ticket_id = $2 RETURNING ticket_id, title, priority, status;
+---
+kind: tool
+name: update-ticket-status
+type: postgres-sql
+source: tickets-db
+description: Change a ticket's status ('Open', 'In Progress', 'Resolved', 'Closed'). Returns the updated ticket.
+parameters:
+  - name: status
+    type: string
+    description: The new status.
+  - name: ticket_id
+    type: integer
+    description: The ticket ID.
+statement: UPDATE tickets SET status = $1 WHERE ticket_id = $2 RETURNING ticket_id, title, priority, status;
+---
+kind: toolset
+name: tickets_toolset
+tools:
+  - search-tickets
+  - get-ticket-by-id
+  - get-tickets-by-assignee
+  - get-tickets-by-status
+  - get-tickets-by-priority
+  - get-tickets-by-date-range
+  - create-new-ticket
+  - update-ticket-priority
+  - update-ticket-status
+
+# ------------------------------------------------------------------------------
+# Part (e): sports store e-commerce
+# Every tool that touches a customer's data takes user_email. The ADK agent never
+# lets the model choose it: a before_tool_callback overwrites it with the signed-in
+# user's email from the session, so one customer cannot read or change another's
+# list or orders.
+# ------------------------------------------------------------------------------
+---
+kind: tool
+name: search-products-by-description
+type: postgres-sql
+source: store-db
+description: Semantic product search from a shopper's description of what they need (activity, terrain, features). Returns the 5 best matches.
+parameters:
+  - name: description
+    type: string
+    description: What the shopper is looking for, in their own words.
+    embeddedBy: gemini-embedder
+statement: |
+  SELECT p.name, p.brand, p.category, p.description,
+         (SELECT min(price) FROM products_variants v WHERE v.product_id = p.product_id) AS from_price_eur,
+         round((1 - (p.embedding <=> $1::vector))::numeric, 3) AS similarity
+  FROM products p
+  WHERE p.embedding IS NOT NULL
+  ORDER BY p.embedding <=> $1::vector
+  LIMIT 5;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: search-products-by-brand
+type: postgres-sql
+source: store-db
+description: Find products by brand name. Pass only the brand, e.g. "Nike" from "I want to see Nike products".
+parameters:
+  - name: brand
+    type: string
+    description: The brand name.
+statement: |
+  SELECT p.name, p.brand, p.category, p.description, min(v.price) AS from_price_eur
+  FROM products p JOIN products_variants v ON v.product_id = p.product_id
+  WHERE p.brand ILIKE '%' || $1 || '%'
+  GROUP BY p.product_id
+  ORDER BY p.popularity_score DESC
+  LIMIT 8;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: search-products-by-size
+type: postgres-sql
+source: store-db
+description: Find products available in a specific size within a category (e.g. size "42" in "Running").
+parameters:
+  - name: size
+    type: string
+    description: The size, e.g. "42", "M", "One Size".
+  - name: category
+    type: string
+    description: The category, e.g. "Running", "Hiking", "Football".
+statement: |
+  SELECT p.name, p.brand, p.category, v.size, v.color, v.price AS price_eur
+  FROM products p JOIN products_variants v ON v.product_id = p.product_id
+  WHERE v.size = $1 AND p.category ILIKE $2
+  ORDER BY p.brand, p.name
+  LIMIT 15;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: get-product-details
+type: postgres-sql
+source: store-db
+description: Full details for one product by exact name, including every size, colour and price.
+parameters:
+  - name: product_name
+    type: string
+    description: The exact product name.
+statement: |
+  SELECT p.name, p.brand, p.category, p.description,
+         string_agg(DISTINCT v.size, ', ') AS sizes,
+         string_agg(DISTINCT v.color, ', ') AS colors,
+         min(v.price) AS min_price_eur, max(v.price) AS max_price_eur
+  FROM products p JOIN products_variants v ON v.product_id = p.product_id
+  WHERE lower(p.name) = lower($1)
+  GROUP BY p.product_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: check-inventory
+type: postgres-sql
+source: store-db
+description: Stock of a product at each store, per size and colour. Use before suggesting a store to buy from.
+parameters:
+  - name: product_name
+    type: string
+    description: The exact product name.
+statement: |
+  SELECT s.name AS store, v.size, v.color, i.quantity
+  FROM inventory i
+  JOIN products_variants v ON v.variant_id = i.variant_id
+  JOIN products p ON p.product_id = v.product_id
+  JOIN stores s ON s.store_id = i.store_id
+  WHERE lower(p.name) = lower($1) AND i.quantity > 0
+  ORDER BY s.name, v.size, v.color
+  LIMIT 40;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: find-nearest-stores
+type: postgres-sql
+source: store-db
+description: The 3 stores closest to the signed-in customer's home address, with distance in metres.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+statement: |
+  SELECT s.name, s.address, s.city, ST_Distance(s.location, u.location)::int AS distance_m
+  FROM stores s, users u
+  WHERE u.email = $1
+  ORDER BY s.location <-> u.location
+  LIMIT 3;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: add-to-shopping-list
+type: postgres-sql
+source: store-db
+description: Add one product in a specific size and colour to the signed-in customer's shopping list. Returns nothing if that size/colour does not exist.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+  - name: product_name
+    type: string
+    description: The exact product name.
+  - name: size
+    type: string
+    description: The size, exactly as listed in the product details.
+  - name: color
+    type: string
+    description: The colour, exactly as listed in the product details.
+  - name: quantity
+    type: integer
+    description: How many to add (1 if not specified).
+statement: |
+  WITH u AS (SELECT user_id FROM users WHERE email = $1),
+  list AS (
+    INSERT INTO shopping_lists (user_id)
+    SELECT user_id FROM u
+    WHERE NOT EXISTS (SELECT 1 FROM shopping_lists WHERE user_id = (SELECT user_id FROM u))
+    RETURNING list_id
+  ),
+  target AS (
+    SELECT list_id FROM list
+    UNION ALL
+    SELECT list_id FROM shopping_lists WHERE user_id = (SELECT user_id FROM u)
+    LIMIT 1
+  ),
+  variant AS (
+    SELECT v.variant_id, v.product_id FROM products_variants v
+    JOIN products p ON p.product_id = v.product_id
+    WHERE lower(p.name) = lower($2) AND v.size = $3 AND lower(v.color) = lower($4)
+    LIMIT 1
+  )
+  INSERT INTO shopping_list_items (list_id, product_id, variant_id, quantity)
+  SELECT t.list_id, v.product_id, v.variant_id, greatest($5, 1)
+  FROM target t CROSS JOIN variant v
+  RETURNING item_id, quantity;
+---
+kind: tool
+name: show-shopping-list
+type: postgres-sql
+source: store-db
+description: The signed-in customer's shopping list with line totals.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+statement: |
+  SELECT p.name, p.brand, v.size, v.color, sli.quantity, v.price AS unit_price_eur,
+         sli.quantity * v.price AS line_total_eur
+  FROM shopping_lists sl
+  JOIN users u ON u.user_id = sl.user_id
+  JOIN shopping_list_items sli ON sli.list_id = sl.list_id
+  JOIN products_variants v ON v.variant_id = sli.variant_id
+  JOIN products p ON p.product_id = v.product_id
+  WHERE u.email = $1
+  ORDER BY sli.item_id;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: list-delivery-methods
+type: postgres-sql
+source: store-db
+description: Delivery options offered by a store, with cost and estimated time.
+parameters:
+  - name: store_name
+    type: string
+    description: The exact store name.
+statement: |
+  SELECT d.name, d.description, d.base_cost AS cost_eur, d.estimated_delivery_time
+  FROM delivery_methods d JOIN stores s ON s.store_id = d.store_id
+  WHERE lower(s.name) = lower($1)
+  ORDER BY d.base_cost;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: place-order
+type: postgres-sql
+source: store-db
+description: Turn the signed-in customer's whole shopping list into an order from one store with the chosen delivery method, then empty the list. Returns the order id and total. Only call after the customer has confirmed the store, delivery method and total.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+  - name: store_name
+    type: string
+    description: The exact store name.
+  - name: delivery_method
+    type: string
+    description: The exact delivery method name offered by that store.
+statement: |
+  WITH u AS (SELECT user_id, concat(address, ', ', trim(city), ' ', trim(postal_code)) AS addr FROM users WHERE email = $1),
+  items AS (
+    SELECT sli.item_id, sli.variant_id, sli.quantity, v.price, p.name,
+           concat('Size: ', v.size, ', Color: ', v.color) AS details
+    FROM shopping_lists sl
+    JOIN shopping_list_items sli ON sli.list_id = sl.list_id
+    JOIN products_variants v ON v.variant_id = sli.variant_id
+    JOIN products p ON p.product_id = v.product_id
+    WHERE sl.user_id = (SELECT user_id FROM u)
+  ),
+  st AS (SELECT store_id FROM stores WHERE lower(name) = lower($2)),
+  dm AS (
+    SELECT delivery_method_id, base_cost FROM delivery_methods
+    WHERE store_id = (SELECT store_id FROM st) AND lower(name) = lower($3)
+  ),
+  new_order AS (
+    INSERT INTO orders (user_id, store_id, delivery_method_id, shipping_address, shipping_cost, total_amount)
+    SELECT u.user_id, st.store_id, dm.delivery_method_id, u.addr, dm.base_cost,
+           dm.base_cost + (SELECT sum(quantity * price) FROM items)
+    FROM u, st, dm
+    WHERE EXISTS (SELECT 1 FROM items)
+    RETURNING order_id, total_amount
+  ),
+  lines AS (
+    INSERT INTO order_items (order_id, variant_id, quantity, price_at_purchase, product_name_at_purchase, variant_details_at_purchase)
+    SELECT o.order_id, i.variant_id, i.quantity, i.price, i.name, i.details
+    FROM new_order o CROSS JOIN items i
+    RETURNING order_id
+  ),
+  cleared AS (
+    DELETE FROM shopping_list_items WHERE item_id IN (SELECT item_id FROM items) AND EXISTS (SELECT 1 FROM new_order)
+    RETURNING item_id
+  )
+  SELECT order_id, total_amount AS total_eur, (SELECT count(*) FROM cleared) AS items_ordered
+  FROM new_order;
+---
+kind: tool
+name: get-my-orders
+type: postgres-sql
+source: store-db
+description: The signed-in customer's orders with store, status, delivery method, total and items.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+statement: |
+  SELECT o.order_id, s.name AS store, o.order_status AS status, d.name AS delivery_method,
+         o.shipping_cost AS shipping_eur, o.total_amount AS total_eur, o.shipping_address,
+         string_agg(concat(oi.product_name_at_purchase, ' (', oi.variant_details_at_purchase, ') x', oi.quantity), '; ') AS items
+  FROM orders o
+  JOIN users u ON u.user_id = o.user_id
+  JOIN stores s ON s.store_id = o.store_id
+  LEFT JOIN delivery_methods d ON d.delivery_method_id = o.delivery_method_id
+  LEFT JOIN order_items oi ON oi.order_id = o.order_id
+  WHERE u.email = $1
+  GROUP BY o.order_id, s.name, d.name
+  ORDER BY o.order_id DESC;
+annotations:
+  readOnlyHint: true
+---
+kind: tool
+name: update-order-delivery-method
+type: postgres-sql
+source: store-db
+description: Switch one of the signed-in customer's pending orders to another delivery method of the same store and recompute the total.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+  - name: order_id
+    type: integer
+    description: The order id.
+  - name: delivery_method
+    type: string
+    description: The exact new delivery method name.
+statement: |
+  WITH o AS (
+    SELECT o.order_id, o.store_id FROM orders o JOIN users u ON u.user_id = o.user_id
+    WHERE u.email = $1 AND o.order_id = $2 AND o.order_status = 'pending'
+  ),
+  dm AS (
+    SELECT delivery_method_id, base_cost FROM delivery_methods
+    WHERE store_id = (SELECT store_id FROM o) AND lower(name) = lower($3)
+  )
+  UPDATE orders SET
+    delivery_method_id = (SELECT delivery_method_id FROM dm),
+    shipping_cost = (SELECT base_cost FROM dm),
+    total_amount = (SELECT sum(subtotal_line_item) FROM order_items WHERE order_id = $2) + (SELECT base_cost FROM dm)
+  WHERE order_id = (SELECT order_id FROM o) AND EXISTS (SELECT 1 FROM dm)
+  RETURNING order_id, shipping_cost AS shipping_eur, total_amount AS total_eur;
+---
+kind: tool
+name: cancel-order
+type: postgres-sql
+source: store-db
+description: Cancel one of the signed-in customer's pending orders.
+parameters:
+  - name: user_email
+    type: string
+    description: Filled in automatically with the signed-in customer's email.
+  - name: order_id
+    type: integer
+    description: The order id.
+statement: |
+  UPDATE orders SET order_status = 'cancelled'
+  WHERE order_id = $2 AND order_status = 'pending'
+    AND user_id = (SELECT user_id FROM users WHERE email = $1)
+  RETURNING order_id, order_status;
+---
+kind: toolset
+name: store_toolset
+tools:
+  - search-products-by-description
+  - search-products-by-brand
+  - search-products-by-size
+  - get-product-details
+  - check-inventory
+  - find-nearest-stores
+  - add-to-shopping-list
+  - show-shopping-list
+  - list-delivery-methods
+  - place-order
+  - get-my-orders
+  - update-order-delivery-method
+  - cancel-order
