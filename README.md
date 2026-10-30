@@ -31,6 +31,39 @@ infrastructure, tests, execution transcripts and a code walkthrough in this repo
 | Detailed code and execution walkthrough | `docs/WALKTHROUGH.md` (code), `docs/runs/*.md` (execution), `docs/VIDEO_SCRIPT.md` (video) |
 | YouTube video | Link above |
 
+## Verified results (live runs, 2026-10-29)
+
+Each transcript in `docs/runs/` records every agent hop, tool call, tool result and reply.
+
+- **(a) Lead generation:** the intent extractor resolved Thailand + fintech. Pattern
+  discovery fanned out one research branch per company in parallel and found that
+  KakaoBank and WeBank entered Thailand through the SCBX virtual-bank consortium.
+  It produced three dated, sourced patterns, then the lead phase found and ranked two
+  new leads with outreach angles. This run used free-tier Flash-Lite models: one lead
+  is cited only as "internal research", and the report ends by repeating the patterns
+  question. The prompts have since been tightened to prevent both. A re-run on the same
+  free-tier models returned a weaker lead set, so this run is the one kept.
+- **(b) Gemini CLI pipeline:** cloned `pallets/itsdangerous`. Three ADK agents ran the
+  Gemini CLI in parallel (architecture, test plan, risk review), and the CLI read the
+  repo itself (`read_file`, `list_directory`, ...). The transcript includes the CLI's
+  own session logs as proof. The CLI flagged the SHA-1 default at `signer.py:46`. A
+  follow-up ran the CLI in edit mode, which wrote `tests/test_timed_extra.py`, shown
+  by `show_repository_changes`. (The generated tests were not executed here.)
+- **(c) Bug assistant:** MCP semantic search matched the login-freeze report to ticket
+  #1. It listed open P0s, answered a Postgres connection-slot error from StackExchange
+  plus web search, and found related ticket #6 by vector distance. It checked for
+  duplicates before creating a new P1 ticket, then updated a status. The GitHub MCP
+  server is wired up but was not exercised, because no PAT was configured.
+- **(d) Code review:** the sandboxed tests confirmed the sample's real bug (the loop
+  skips `nums[0]`) and the empty-input crash. Feedback was saved as an artifact. On
+  "yes, fix it", the fix loop produced code that passed 10/10 re-run tests and exited
+  early through `exit_fix_loop`.
+- **(e) E-commerce:** semantic search returned Hoka and Salomon trail shoes. It used
+  PostGIS nearest stores plus per-store inventory, added to the shopping list, and
+  **refused to show another customer's orders**. `place-order` was **blocked until the
+  customer confirmed**, and the order was then placed and listed.
+- `uv run pytest -q`: 15 offline unit tests pass.
+
 ## Architecture at a glance
 
 ```mermaid
@@ -118,8 +151,13 @@ docs/                         WALKTHROUGH.md, VIDEO_SCRIPT.md, runs/*.md
 ## Notes
 
 - **Models:** the code defaults to `gemini-flash-latest`; set `FAST_MODEL` / `SMART_MODEL`
-  in `.env` to change it. Every agent uses a retrying model handle (`agents/*/model.py`),
-  because free-tier Gemini returns transient 429/503 errors under load.
+  in `.env` to change it. Every agent uses `FallbackGemini` (`agents/*/model.py`): it
+  retries transient 503s and, when one model's daily quota runs out, re-sends the request
+  to the next model in `FALLBACK_MODELS`. The recorded runs used a free-tier key
+  (about 20 requests per model per day), so transcripts span several Gemini 3.x Flash models.
+- **Search backend:** `SEARCH_BACKEND=google` uses ADK's built-in Google Search grounding.
+  The free-tier key has no grounding quota, so the runs used `SEARCH_BACKEND=ddg`
+  (keyless DuckDuckGo search + page fetch function tools). The agent code is the same for both.
 - **Not deployed:** the Cloud Run script is included but was not run for this submission.
   Everything was verified locally.
 - **Credits:** each agent adapts the reference implementation linked in the assignment.

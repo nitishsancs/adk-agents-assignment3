@@ -5,9 +5,9 @@ from google.adk.code_executors import BuiltInCodeExecutor
 
 from ..config import settings
 from ..model import gemini
+from ..tools import exit_fix_loop, save_fixed_code, validate_fixed_style
 
 WORKER, CRITIC = gemini("FAST_MODEL"), gemini("SMART_MODEL")
-from ..tools import exit_fix_loop, save_fixed_code, validate_fixed_style
 
 code_fixer = Agent(
     name="code_fixer",

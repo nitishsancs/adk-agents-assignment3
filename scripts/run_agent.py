@@ -38,6 +38,7 @@ async def run(agent_pkg: str, turns: list[str], out: Path, user_id: str) -> None
         print(line, flush=True)
         log.append(line)
 
+    shown_results: set[str] = set()
     for turn_no, text in enumerate(turns, 1):
         emit(f"\n## Turn {turn_no}\n\n**User:** {text}\n")
         started = time.time()
@@ -47,14 +48,23 @@ async def run(agent_pkg: str, turns: list[str], out: Path, user_id: str) -> None
                 if part.function_call:
                     emit(f"- `{event.author}` calls **{part.function_call.name}**(`{short(dict(part.function_call.args or {}), 300)}`)")
                 elif part.function_response:
-                    emit(f"- `{event.author}` ← {part.function_response.name}: `{short(part.function_response.response, 400)}`")
+                    response = part.function_response.response or {}
+                    emit(f"- `{event.author}` ← {part.function_response.name}: `{short(response, 400)}`")
+                    result = response.get("result") if isinstance(response, dict) else None
+                    if isinstance(result, str) and len(result) > 400 and result not in shown_results:
+                        shown_results.add(result)
+                        # Sub-agent output (AgentTool): keep it whole so the transcript shows it.
+                        emit(f"\n<details><summary>Full output of {part.function_response.name}</summary>\n\n{result}\n\n</details>\n")
                 elif part.executable_code:
                     emit(f"- `{event.author}` executes code:\n\n```python\n{part.executable_code.code}\n```")
                 elif part.code_execution_result:
                     emit(f"- `{event.author}` code result: `{short(part.code_execution_result.output, 400)}`")
                 elif part.text and not part.thought:
                     if event.is_final_response() and event.author == root.name:
-                        emit(f"\n**{event.author}:**\n\n{part.text}\n")
+                        if part.text.strip() in {r.strip() for r in shown_results}:
+                            emit(f"\n**{event.author}:** _(returns the sub-agent output above verbatim)_\n")
+                        else:
+                            emit(f"\n**{event.author}:**\n\n{part.text}\n")
                     else:
                         emit(f"- `{event.author}` says: {short(part.text, 500)}")
             if event.actions and event.actions.state_delta:

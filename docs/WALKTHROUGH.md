@@ -8,6 +8,17 @@ All five live under `agents/`, so `uv run adk web agents` lists them in one dev 
 
 ---
 
+## Shared: models and quotas
+
+Every agent builds its model through `agents/<agent>/model.py`. `FallbackGemini`
+subclasses ADK's `Gemini` model. It retries transient 500/503/504 errors with backoff,
+and when a model's per-day quota is exhausted (a 429 naming a quota metric) it re-sends
+the same request to the next model in `FALLBACK_MODELS` and skips the exhausted model
+from then on. The recorded runs used a free-tier key (about 20 requests per model per
+day), so the transcripts move across several Gemini 3.x Flash / Flash-Lite models.
+
+---
+
 ## (a) Deep research agent for lead generation
 
 **Goal:** given "find fintech leads in Thailand", learn what foreign fintechs did in the
@@ -37,11 +48,15 @@ Files, in reading order:
    `country` / `industry` keys that every prompt reads via `{country?}`.
 2. `prompts.py`: every instruction. The root prompt is a five-stage state machine:
    understand, scope k, discover, scope m, generate.
-3. `sub_agents/pipelines.py`: the two phases as `SequentialAgent`s. Search agents
+3. `websearch.py`: the research tools. `SEARCH_BACKEND=google` (default) gives the
+   researchers ADK's built-in `google_search` grounding. `SEARCH_BACKEND=ddg` swaps in
+   `web_search` (keyless DuckDuckGo) + `fetch_page` function tools, for API keys where
+   grounding has no quota, as on the Gemini free tier used for the recorded runs.
+4. `sub_agents/pipelines.py`: the two phases as `SequentialAgent`s. Search agents
    (`google_search`) write free text; a separate formatter with `output_schema` turns it
    into JSON. Gemini can't combine the built-in search tool with a response schema in
    one call, so research and structuring are split.
-4. `sub_agents/fanout.py`: the deep-research core. `FanOutResearchAgent` reads the
+5. `sub_agents/fanout.py`: the deep-research core. `FanOutResearchAgent` reads the
    formatted company list from state and builds one `validator -> researcher -> formatter`
    pipeline per company at run time, wrapped in a `ParallelAgent`. Each branch writes
    indexed keys (`company_findings_0`, ...). `ConsolidateFindingsAgent` merges them and
@@ -132,7 +147,8 @@ Files:
    `ORDER BY embedding <=> $1::vector`. `create-new-ticket` uses `valueFromParam` to
    embed the new description on insert, so new tickets are searchable immediately.
    Read tools carry `readOnlyHint` annotations.
-2. `agents/bug_assistant/agent.py`: five tool kinds on one agent. Both MCP servers
+2. `agents/bug_assistant/agent.py`: five tool kinds on one agent. The search agent uses
+   the same switchable backend as (a) (`websearch.py`). Both MCP servers
    connect through ADK's `McpToolset` + `StreamableHTTPConnectionParams`. The GitHub MCP
    server is limited to read-only tools with `tool_filter` and only loads when
    `GITHUB_PERSONAL_ACCESS_TOKEN` is set.

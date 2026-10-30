@@ -74,8 +74,10 @@ root_agent = Agent(
     instruction=prompts.ROOT_INSTRUCTION,
     tools=[
         AgentTool(agent=intent_extractor_agent),
-        AgentTool(agent=pattern_discovery_agent),
-        AgentTool(agent=lead_generation_agent),
+        # skip_summarization: the research output goes to the user verbatim instead of
+        # being paraphrased (and shortened) by the root model.
+        AgentTool(agent=pattern_discovery_agent, skip_summarization=True),
+        AgentTool(agent=lead_generation_agent, skip_summarization=True),
         set_research_scope,
         reset_research,
     ],

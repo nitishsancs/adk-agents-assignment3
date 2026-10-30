@@ -29,14 +29,13 @@ Work through these stages in order. Never skip one.
 
 3. Discover patterns. Call `pattern_discovery_agent` with a one-line request such as
    "Discover pre-investment patterns for <industry> companies entering <country>".
-   Then show the user the discovered patterns exactly as returned, and ask whether to
-   use them to find new leads.
+   Its output is shown to the user directly and ends by asking whether to find leads.
 
 4. Scope the lead search. If the user agrees and m is empty, ask how many leads to find
    (1 to 10, suggest 3). When they answer, call `set_research_scope` with m.
 
 5. Generate leads. Call `lead_generation_agent` with a one-line request such as
-   "Find <m> <industry> leads for <country>". Show the returned report to the user as-is.
+   "Find <m> <industry> leads for <country>". Its report is shown to the user directly.
 
 If the user asks something unrelated, answer briefly and steer back to the workflow.
 If the user wants to start over, call `reset_research`.
@@ -59,6 +58,8 @@ Use Google Search to find exactly {k?} foreign (non-{country?}) companies in the
 For each company give: name, country of origin, investment type, approximate date,
 the URL of the article that reports it, and a one-sentence business description.
 Only include companies you found a source for.
+
+Keep the research focused: at most 3 searches and 2 page reads, then write your answer.
 """
 
 FORMATTER_INSTRUCTION = """
@@ -96,6 +97,8 @@ Look for these pre-investment signals and give dates where you can:
 - press statements about expansion into {country?} or its region
 
 Write a concise summary of the signals you found, and list every source URL you used.
+
+Keep the research focused: at most 3 searches and 2 page reads, then write your answer.
 """
 
 RESEARCH_FORMATTER_INSTRUCTION = """
@@ -122,6 +125,9 @@ For each pattern give:
 
 Finish with one line: "Lead criteria:" followed by the observable signals a new
 company would have to show today to be a strong lead. Use markdown.
+
+End with this exact question on its own line: "Shall I use these patterns to find new
+leads? If so, how many (1-10)?"
 """
 
 LEAD_FINDER_INSTRUCTION = """
@@ -137,6 +143,8 @@ these signals NOW (last 6 months) but have NOT yet announced an investment in
 
 For each company give its name, country of origin, a one-sentence business
 description, and the specific current signal that makes it a lead.
+
+Keep the research focused: at most 3 searches and 2 page reads, then write your answer.
 """
 
 LEAD_FORMATTER_INSTRUCTION = """
@@ -170,6 +178,8 @@ Patterns to check against:
 
 Report which patterns this company matches, with dates and source URLs, and how
 strong the overall evidence is (high, medium, low).
+
+Keep the research focused: at most 3 searches and 2 page reads, then write your answer.
 """
 
 REPORT_COMPILER_INSTRUCTION = """
@@ -191,5 +201,7 @@ Write a markdown report with:
 4. A "Sources" list with every URL cited.
 
 Rank leads by evidence strength. Leave out leads that failed validation and say how
-many were dropped.
+many were dropped. Cite only URLs that appear in the lead research above; if a lead has
+none, write "no public source found" for it. Do not end with a question: the report is
+the final deliverable.
 """

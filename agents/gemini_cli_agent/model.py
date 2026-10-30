@@ -2,8 +2,8 @@
 
 Transient 500/503/504 errors are retried with exponential backoff. A 429 means the
 model's quota is used up (the Gemini free tier allows ~20 requests per model per day),
-so instead of waiting the request moves to the next model in FALLBACK_MODELS and the
-exhausted model is skipped for the rest of the process.
+so instead of waiting the request moves to the next model in FALLBACK_MODELS. A model
+whose per-day quota is gone is skipped for the rest of the process.
 """
 
 import logging
@@ -49,8 +49,10 @@ class FallbackGemini(Gemini):
                 per_model = "Quota exceeded for metric" in str(exc)
                 if getattr(exc, "code", None) != 429 or not per_model or i == len(candidates) - 1:
                     raise
-                self.exhausted.add(name)
-                log.warning("%s quota exhausted, falling back to %s", name, candidates[i + 1])
+                # Per-day quota: skip this model from now on. Per-minute: just move on for now.
+                if "PerDay" in str(exc):
+                    self.exhausted.add(name)
+                log.warning("%s quota hit, falling back to %s", name, candidates[i + 1])
 
 
 def gemini(env_var: str = "FAST_MODEL") -> Gemini:

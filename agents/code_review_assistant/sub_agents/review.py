@@ -5,9 +5,9 @@ from google.adk.code_executors import BuiltInCodeExecutor
 
 from ..config import settings
 from ..model import gemini
+from ..tools import analyze_code_structure, check_code_style, save_review_report, search_past_feedback
 
 WORKER, CRITIC = gemini("FAST_MODEL"), gemini("SMART_MODEL")
-from ..tools import analyze_code_structure, check_code_style, save_review_report, search_past_feedback
 
 code_analyzer = Agent(
     name="code_analyzer",

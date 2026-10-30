@@ -39,7 +39,7 @@ Code (open in this order, scroll slowly):
 Demo in adk web, select `lead_generation_agent`:
 - "Find fintech leads in Thailand" -> it asks how many companies -> "2".
 - While it runs, open the **Events** tab and expand the trace: the parallel branches
-  `company_pipeline_0` / `company_pipeline_1` run side by side, each calling google_search.
+  `company_pipeline_0` / `company_pipeline_1` run side by side, each calling the research tools (`web_search` + `fetch_page` with `SEARCH_BACKEND=ddg`, or `google_search`).
 - Patterns appear -> "Yes, find leads" -> "2" -> the final ranked report with sources.
 - Open the **State** tab and show `discovered_patterns`, `companies_found` and `lead_report`.
 
